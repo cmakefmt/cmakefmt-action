@@ -21,11 +21,10 @@ inputs:
   args:
     description: >
       Arguments to pass to cmakefmt after installation.
-      Defaults to "--check --report-format github ." which checks all CMake
-      files in the working directory and emits GitHub Actions annotations.
+      Defaults to "." which runs cmakefmt on the entire repository.
       Set to "" to install cmakefmt without running it.
     required: false
-    default: '--check --report-format github .'
+    default: '.'
 
 outputs:
   version:

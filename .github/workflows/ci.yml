@@ -40,10 +40,10 @@ jobs:
           add_executable(hello main.cpp)
           EOF
 
-      - name: Install and check via action (default args)
+      - name: Install and run via action (default args)
         uses: ./
         with:
-          args: '--check --report-format github test/CMakeLists.txt'
+          args: 'test/CMakeLists.txt'
 
       - name: Verify cmakefmt is on PATH after action completes
         shell: bash
