@@ -1,0 +1,141 @@
+# SPDX-FileCopyrightText: Copyright 2026 Puneet Matharu
+#
+# SPDX-License-Identifier: MIT OR Apache-2.0
+
+name: 'cmakefmt'
+description: 'Install cmakefmt and optionally check CMake formatting'
+author: 'cmakefmt'
+
+branding:
+  icon: 'check-square'
+  color: 'blue'
+
+inputs:
+  version:
+    description: >
+      Version of cmakefmt to install (e.g. "0.2.0" or "latest").
+      Omit or set to "latest" to install the newest release.
+    required: false
+    default: 'latest'
+
+  args:
+    description: >
+      Arguments to pass to cmakefmt after installation.
+      Defaults to "--check --report-format github ." which checks all CMake
+      files in the working directory and emits GitHub Actions annotations.
+      Set to "" to install cmakefmt without running it.
+    required: false
+    default: '--check --report-format github .'
+
+outputs:
+  version:
+    description: 'The installed cmakefmt version (without leading v)'
+    value: ${{ steps.resolve.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+
+    # ── Resolve "latest" to a concrete semver ──────────────────────────────
+    - name: Resolve version
+      id: resolve
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [[ "${INPUT_VERSION}" == "latest" ]]; then
+          VERSION="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+            "https://github.com/cmakefmt/cmakefmt/releases/latest" \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+        else
+          VERSION="${INPUT_VERSION#v}"
+        fi
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "Resolved cmakefmt version: ${VERSION}"
+
+    # ── Install on Linux ───────────────────────────────────────────────────
+    - name: Install cmakefmt (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        VERSION: ${{ steps.resolve.outputs.version }}
+      run: |
+        set -euo pipefail
+        ARCH="$(uname -m)"
+        case "${ARCH}" in
+          x86_64)  TARGET="x86_64-unknown-linux-musl" ;;
+          aarch64) TARGET="aarch64-unknown-linux-gnu"  ;;
+          *)
+            echo "::error::Unsupported Linux architecture: ${ARCH}"
+            exit 1
+            ;;
+        esac
+        URL="https://github.com/cmakefmt/cmakefmt/releases/download/v${VERSION}/cmakefmt-${VERSION}-${TARGET}.tar.gz"
+        echo "Downloading ${URL}"
+        INSTALL_DIR="${RUNNER_TEMP}/cmakefmt-bin"
+        mkdir -p "${INSTALL_DIR}"
+        curl -fsSL "${URL}" \
+          | tar -xz -C "${INSTALL_DIR}" --strip-components=1 \
+              "cmakefmt-${VERSION}-${TARGET}/cmakefmt"
+        chmod +x "${INSTALL_DIR}/cmakefmt"
+        echo "${INSTALL_DIR}" >> "$GITHUB_PATH"
+
+    # ── Install on macOS ───────────────────────────────────────────────────
+    - name: Install cmakefmt (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      env:
+        VERSION: ${{ steps.resolve.outputs.version }}
+      run: |
+        set -euo pipefail
+        ARCH="$(uname -m)"
+        case "${ARCH}" in
+          x86_64) TARGET="x86_64-apple-darwin"  ;;
+          arm64)  TARGET="aarch64-apple-darwin"  ;;
+          *)
+            echo "::error::Unsupported macOS architecture: ${ARCH}"
+            exit 1
+            ;;
+        esac
+        URL="https://github.com/cmakefmt/cmakefmt/releases/download/v${VERSION}/cmakefmt-${VERSION}-${TARGET}.tar.gz"
+        echo "Downloading ${URL}"
+        INSTALL_DIR="${RUNNER_TEMP}/cmakefmt-bin"
+        mkdir -p "${INSTALL_DIR}"
+        curl -fsSL "${URL}" \
+          | tar -xz -C "${INSTALL_DIR}" --strip-components=1 \
+              "cmakefmt-${VERSION}-${TARGET}/cmakefmt"
+        chmod +x "${INSTALL_DIR}/cmakefmt"
+        echo "${INSTALL_DIR}" >> "$GITHUB_PATH"
+
+    # ── Install on Windows ─────────────────────────────────────────────────
+    - name: Install cmakefmt (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        VERSION: ${{ steps.resolve.outputs.version }}
+      run: |
+        $Version = $env:VERSION
+        $Target  = "x86_64-pc-windows-msvc"
+        $Archive = "cmakefmt-${Version}-${Target}.zip"
+        $Url     = "https://github.com/cmakefmt/cmakefmt/releases/download/v${Version}/${Archive}"
+        $OutZip  = Join-Path $env:RUNNER_TEMP $Archive
+        $InstDir = Join-Path $env:RUNNER_TEMP "cmakefmt-bin"
+        Write-Host "Downloading $Url"
+        Invoke-WebRequest -Uri $Url -OutFile $OutZip -UseBasicParsing
+        Expand-Archive -Path $OutZip -DestinationPath $env:RUNNER_TEMP -Force
+        $SrcDir  = Join-Path $env:RUNNER_TEMP "cmakefmt-${Version}-${Target}"
+        New-Item -ItemType Directory -Path $InstDir -Force | Out-Null
+        Copy-Item -Path (Join-Path $SrcDir "cmakefmt.exe") -Destination $InstDir
+        $InstDir | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+    # ── Optionally run cmakefmt ────────────────────────────────────────────
+    - name: Run cmakefmt
+      if: inputs.args != ''
+      shell: bash
+      env:
+        CMAKEFMT_ARGS: ${{ inputs.args }}
+      run: |
+        # Word-split intentional: args is a space-separated list of flags.
+        # shellcheck disable=SC2086
+        cmakefmt $CMAKEFMT_ARGS

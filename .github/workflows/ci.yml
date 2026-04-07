@@ -1,0 +1,94 @@
+# SPDX-FileCopyrightText: Copyright 2026 Puneet Matharu
+#
+# SPDX-License-Identifier: MIT OR Apache-2.0
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: read-all
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Test: default invocation (latest version, check mode) ───────────────
+  test-default:
+    name: default (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Write a well-formatted CMake file
+        shell: bash
+        run: |
+          mkdir -p test
+          cat > test/CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.25)
+          project(hello)
+          add_executable(hello main.cpp)
+          EOF
+
+      - name: Install and check via action (default args)
+        uses: ./
+        with:
+          args: '--check --report-format github test/CMakeLists.txt'
+
+      - name: Verify cmakefmt is on PATH after action completes
+        shell: bash
+        run: cmakefmt --version
+
+  # ── Test: install only (args = "") ──────────────────────────────────────
+  test-install-only:
+    name: install-only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install cmakefmt without running it
+        id: setup
+        uses: ./
+        with:
+          args: ''
+
+      - name: Check output version is set
+        shell: bash
+        run: |
+          echo "Installed version: ${{ steps.setup.outputs.version }}"
+          [[ -n "${{ steps.setup.outputs.version }}" ]]
+
+      - name: Run manually
+        shell: bash
+        run: cmakefmt --version
+
+  # ── Test: pinned version ─────────────────────────────────────────────────
+  test-pinned-version:
+    name: pinned-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install pinned version
+        id: setup
+        uses: ./
+        with:
+          version: '0.2.0'
+          args: ''
+
+      - name: Verify installed version matches pin
+        shell: bash
+        run: |
+          INSTALLED="$(cmakefmt --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          echo "Installed: ${INSTALLED}"
+          [[ "${INSTALLED}" == "0.2.0" ]]
