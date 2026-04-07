@@ -79,26 +79,26 @@ jobs:
 
 ## Inputs
 
-| Input | Default | Description |
-|-------|---------|-------------|
-| `version` | `latest` | Version to install (e.g. `0.2.0`). Defaults to the newest release. |
-| `args` | `.` | Arguments passed to `cmakefmt`. Set to `""` to install without running. |
+| Input     | Default  | Description                                                             |
+|-----------|----------|-------------------------------------------------------------------------|
+| `version` | `latest` | Version to install (e.g. `0.2.0`). Defaults to the newest release.      |
+| `args`    | `.`      | Arguments passed to `cmakefmt`. Set to `""` to install without running. |
 
 ## Outputs
 
-| Output | Description |
-|--------|-------------|
+| Output    | Description                                  |
+|-----------|----------------------------------------------|
 | `version` | The installed version (without leading `v`). |
 
 ## Platforms
 
-| Runner | Architecture | Binary used |
-|--------|-------------|-------------|
-| `ubuntu-*` | `x86_64` | `x86_64-unknown-linux-musl` (static) |
-| `ubuntu-*-arm` | `aarch64` | `aarch64-unknown-linux-gnu` |
-| `macos-*` (Apple Silicon) | `arm64` | `aarch64-apple-darwin` |
-| `macos-*-intel` | `x86_64` | `x86_64-apple-darwin` |
-| `windows-*` | `x86_64` | `x86_64-pc-windows-msvc` |
+| Runner                    | Architecture | Binary used                          |
+|---------------------------|--------------|--------------------------------------|
+| `ubuntu-*`                | `x86_64`     | `x86_64-unknown-linux-musl` (static) |
+| `ubuntu-*-arm`            | `aarch64`    | `aarch64-unknown-linux-gnu`          |
+| `macos-*` (Apple Silicon) | `arm64`      | `aarch64-apple-darwin`               |
+| `macos-*-intel`           | `x86_64`     | `x86_64-apple-darwin`                |
+| `windows-*`               | `x86_64`     | `x86_64-pc-windows-msvc`             |
 
 ## Exit codes
 
