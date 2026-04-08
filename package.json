@@ -1,0 +1,26 @@
+{
+  "name": "cmakefmt-action",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Install cmakefmt and optionally check CMake formatting",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "ncc build src/main.ts -o dist --source-map --license licenses.txt",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/exec": "^1.1.1",
+    "@actions/http-client": "^2.2.3",
+    "@actions/tool-cache": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.5.2",
+    "@vercel/ncc": "^0.38.3",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.2.0",
+    "typescript": "^6.0.2"
+  },
+  "license": "MIT OR Apache-2.0"
+}

@@ -16,6 +16,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Build: verify dist/ is up to date ────────────────────────────────────
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: Check dist/ is up to date
+        run: |
+          if [[ -n "$(git status --porcelain dist/)" ]]; then
+            echo "::error::dist/ is out of date — run 'npm run build' and commit"
+            git diff --stat dist/
+            exit 1
+          fi
+
   # ── Test: default invocation (latest version, check mode) ───────────────
   test-default:
     name: default (${{ matrix.os }})

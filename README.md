@@ -21,7 +21,7 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
       - uses: cmakefmt/cmakefmt-action@v1
         with:
           args: '--check --report-format github .'
