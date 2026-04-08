@@ -92,3 +92,65 @@ jobs:
           INSTALLED="$(cmakefmt --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
           echo "Installed: ${INSTALLED}"
           [[ "${INSTALLED}" == "0.2.0" ]]
+
+      - name: Verify version output matches pin
+        shell: bash
+        run: |
+          echo "Output version: ${{ steps.setup.outputs.version }}"
+          [[ "${{ steps.setup.outputs.version }}" == "0.2.0" ]]
+
+  # ── Test: --check correctly fails on unformatted files ──────────────────
+  test-check-fails:
+    name: check-fails-on-unformatted
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install cmakefmt
+        uses: ./
+        with:
+          args: ''
+
+      - name: Write an intentionally unformatted CMake file
+        shell: bash
+        run: |
+          printf 'cmake_minimum_required(VERSION 3.25)\nproject(   hello   )\n' \
+            > unformatted.cmake
+
+      - name: Run check mode (expected to fail)
+        id: check
+        uses: ./
+        with:
+          args: '--check unformatted.cmake'
+        continue-on-error: true
+
+      - name: Assert that check correctly reported failure
+        shell: bash
+        run: |
+          if [[ "${{ steps.check.outcome }}" != "failure" ]]; then
+            echo "::error::Expected --check to exit non-zero on an unformatted file, but it succeeded"
+            exit 1
+          fi
+          echo "OK: --check correctly failed on an unformatted file"
+
+  # ── Test: working-directory input ───────────────────────────────────────
+  test-working-directory:
+    name: working-directory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Write a well-formatted CMake file in a subdirectory
+        shell: bash
+        run: |
+          mkdir -p sub/cmake
+          cat > sub/cmake/CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.25)
+          project(sub)
+          EOF
+
+      - name: Run action scoped to subdirectory
+        uses: ./
+        with:
+          args: '--check cmake'
+          working-directory: sub

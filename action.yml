@@ -20,11 +20,29 @@ inputs:
 
   args:
     description: >
-      Arguments to pass to cmakefmt after installation.
-      Defaults to "." which runs cmakefmt on the entire repository.
+      Arguments to pass to cmakefmt after installation. Defaults to
+      check mode with GitHub annotations on the entire repository.
       Set to "" to install cmakefmt without running it.
+      Note: paths containing spaces are not supported via this input —
+      use args: "" and invoke cmakefmt directly in a subsequent run: step.
     required: false
-    default: '.'
+    default: '--check --report-format github .'
+
+  working-directory:
+    description: >
+      Directory from which to run cmakefmt. Defaults to the repository
+      root. Useful for monorepo layouts where CMake files live under a
+      subdirectory.
+    required: false
+    default: ''
+
+  token:
+    description: >
+      GitHub token used to resolve "latest" and download release assets.
+      Defaults to the built-in GITHUB_TOKEN. No extra permissions beyond
+      the default read-only token are required.
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   version:
@@ -41,11 +59,15 @@ runs:
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ inputs.token }}
       run: |
         set -euo pipefail
         if [[ "${INPUT_VERSION}" == "latest" ]]; then
-          VERSION="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-            "https://github.com/cmakefmt/cmakefmt/releases/latest" \
+          VERSION="$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/cmakefmt/cmakefmt/releases/latest" \
+            | grep -oE '"tag_name": *"v?[0-9]+\.[0-9]+\.[0-9]+"' \
             | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
         else
           VERSION="${INPUT_VERSION#v}"
@@ -53,12 +75,22 @@ runs:
         echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
         echo "Resolved cmakefmt version: ${VERSION}"
 
+    # ── Restore cached binary (Linux) ─────────────────────────────────────
+    - name: Restore cached cmakefmt (Linux)
+      if: runner.os == 'Linux'
+      id: cache-linux
+      uses: actions/cache@v5
+      with:
+        path: ~/.cmakefmt-bin
+        key: cmakefmt-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.version }}
+
     # ── Install on Linux ───────────────────────────────────────────────────
     - name: Install cmakefmt (Linux)
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && steps.cache-linux.outputs.cache-hit != 'true'
       shell: bash
       env:
         VERSION: ${{ steps.resolve.outputs.version }}
+        GH_TOKEN: ${{ inputs.token }}
       run: |
         set -euo pipefail
         ARCH="$(uname -m)"
@@ -70,22 +102,46 @@ runs:
             exit 1
             ;;
         esac
-        URL="https://github.com/cmakefmt/cmakefmt/releases/download/v${VERSION}/cmakefmt-${VERSION}-${TARGET}.tar.gz"
-        echo "Downloading ${URL}"
-        INSTALL_DIR="${RUNNER_TEMP}/cmakefmt-bin"
+        ARCHIVE="cmakefmt-${VERSION}-${TARGET}.tar.gz"
+        BASE_URL="https://github.com/cmakefmt/cmakefmt/releases/download/v${VERSION}"
+        INSTALL_DIR="${HOME}/.cmakefmt-bin"
         mkdir -p "${INSTALL_DIR}"
-        curl -fsSL "${URL}" \
-          | tar -xz -C "${INSTALL_DIR}" --strip-components=1 \
-              "cmakefmt-${VERSION}-${TARGET}/cmakefmt"
+        echo "Downloading ${BASE_URL}/${ARCHIVE}"
+        curl -fsSL "${BASE_URL}/${ARCHIVE}" -o "${RUNNER_TEMP}/${ARCHIVE}"
+        echo "Verifying checksum"
+        EXPECTED="$(curl -fsSL "${BASE_URL}/SHA256SUMS" | grep "${ARCHIVE}" | awk '{print $1}')"
+        ACTUAL="$(sha256sum "${RUNNER_TEMP}/${ARCHIVE}" | awk '{print $1}')"
+        if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
+          echo "::error::Checksum mismatch for ${ARCHIVE} (expected=${EXPECTED} actual=${ACTUAL})"
+          exit 1
+        fi
+        tar -xz -C "${INSTALL_DIR}" --strip-components=1 \
+            -f "${RUNNER_TEMP}/${ARCHIVE}" \
+            "cmakefmt-${VERSION}-${TARGET}/cmakefmt"
         chmod +x "${INSTALL_DIR}/cmakefmt"
-        echo "${INSTALL_DIR}" >> "$GITHUB_PATH"
+
+    # ── Add Linux binary to PATH ───────────────────────────────────────────
+    - name: Add cmakefmt to PATH (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: echo "${HOME}/.cmakefmt-bin" >> "$GITHUB_PATH"
+
+    # ── Restore cached binary (macOS) ─────────────────────────────────────
+    - name: Restore cached cmakefmt (macOS)
+      if: runner.os == 'macOS'
+      id: cache-macos
+      uses: actions/cache@v5
+      with:
+        path: ~/.cmakefmt-bin
+        key: cmakefmt-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.version }}
 
     # ── Install on macOS ───────────────────────────────────────────────────
     - name: Install cmakefmt (macOS)
-      if: runner.os == 'macOS'
+      if: runner.os == 'macOS' && steps.cache-macos.outputs.cache-hit != 'true'
       shell: bash
       env:
         VERSION: ${{ steps.resolve.outputs.version }}
+        GH_TOKEN: ${{ inputs.token }}
       run: |
         set -euo pipefail
         ARCH="$(uname -m)"
@@ -97,44 +153,86 @@ runs:
             exit 1
             ;;
         esac
-        URL="https://github.com/cmakefmt/cmakefmt/releases/download/v${VERSION}/cmakefmt-${VERSION}-${TARGET}.tar.gz"
-        echo "Downloading ${URL}"
-        INSTALL_DIR="${RUNNER_TEMP}/cmakefmt-bin"
+        ARCHIVE="cmakefmt-${VERSION}-${TARGET}.tar.gz"
+        BASE_URL="https://github.com/cmakefmt/cmakefmt/releases/download/v${VERSION}"
+        INSTALL_DIR="${HOME}/.cmakefmt-bin"
         mkdir -p "${INSTALL_DIR}"
-        curl -fsSL "${URL}" \
-          | tar -xz -C "${INSTALL_DIR}" --strip-components=1 \
-              "cmakefmt-${VERSION}-${TARGET}/cmakefmt"
+        echo "Downloading ${BASE_URL}/${ARCHIVE}"
+        curl -fsSL "${BASE_URL}/${ARCHIVE}" -o "${RUNNER_TEMP}/${ARCHIVE}"
+        echo "Verifying checksum"
+        EXPECTED="$(curl -fsSL "${BASE_URL}/SHA256SUMS" | grep "${ARCHIVE}" | awk '{print $1}')"
+        ACTUAL="$(shasum -a 256 "${RUNNER_TEMP}/${ARCHIVE}" | awk '{print $1}')"
+        if [[ "${EXPECTED}" != "${ACTUAL}" ]]; then
+          echo "::error::Checksum mismatch for ${ARCHIVE} (expected=${EXPECTED} actual=${ACTUAL})"
+          exit 1
+        fi
+        tar -xz -C "${INSTALL_DIR}" --strip-components=1 \
+            -f "${RUNNER_TEMP}/${ARCHIVE}" \
+            "cmakefmt-${VERSION}-${TARGET}/cmakefmt"
         chmod +x "${INSTALL_DIR}/cmakefmt"
-        echo "${INSTALL_DIR}" >> "$GITHUB_PATH"
+
+    # ── Add macOS binary to PATH ───────────────────────────────────────────
+    - name: Add cmakefmt to PATH (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: echo "${HOME}/.cmakefmt-bin" >> "$GITHUB_PATH"
+
+    # ── Restore cached binary (Windows) ───────────────────────────────────
+    - name: Restore cached cmakefmt (Windows)
+      if: runner.os == 'Windows'
+      id: cache-windows
+      uses: actions/cache@v5
+      with:
+        path: ~\.cmakefmt-bin
+        key: cmakefmt-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.version }}
 
     # ── Install on Windows ─────────────────────────────────────────────────
     - name: Install cmakefmt (Windows)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && steps.cache-windows.outputs.cache-hit != 'true'
       shell: pwsh
       env:
         VERSION: ${{ steps.resolve.outputs.version }}
       run: |
-        $Version = $env:VERSION
-        $Target  = "x86_64-pc-windows-msvc"
-        $Archive = "cmakefmt-${Version}-${Target}.zip"
-        $Url     = "https://github.com/cmakefmt/cmakefmt/releases/download/v${Version}/${Archive}"
-        $OutZip  = Join-Path $env:RUNNER_TEMP $Archive
-        $InstDir = Join-Path $env:RUNNER_TEMP "cmakefmt-bin"
-        Write-Host "Downloading $Url"
-        Invoke-WebRequest -Uri $Url -OutFile $OutZip -UseBasicParsing
-        Expand-Archive -Path $OutZip -DestinationPath $env:RUNNER_TEMP -Force
-        $SrcDir  = Join-Path $env:RUNNER_TEMP "cmakefmt-${Version}-${Target}"
+        $Version     = $env:VERSION
+        $Target      = "x86_64-pc-windows-msvc"
+        $Archive     = "cmakefmt-${Version}-${Target}.zip"
+        $BaseUrl     = "https://github.com/cmakefmt/cmakefmt/releases/download/v${Version}"
+        $OutZip      = Join-Path $env:RUNNER_TEMP $Archive
+        $InstDir     = Join-Path $env:USERPROFILE ".cmakefmt-bin"
+        Write-Host "Downloading ${BaseUrl}/${Archive}"
+        Invoke-WebRequest -Uri "${BaseUrl}/${Archive}" -OutFile $OutZip -UseBasicParsing
+        Write-Host "Verifying checksum"
+        $Checksums = (Invoke-WebRequest -Uri "${BaseUrl}/SHA256SUMS" -UseBasicParsing).Content
+        $Expected  = ($Checksums -split "`n" |
+                      Where-Object { $_ -match [regex]::Escape($Archive) }) -replace '\s.*', ''
+        $Actual    = (Get-FileHash -Path $OutZip -Algorithm SHA256).Hash.ToLower()
+        if ($Actual -ne $Expected.ToLower()) {
+          Write-Host "::error::Checksum mismatch for ${Archive} (expected=${Expected} actual=${Actual})"
+          exit 1
+        }
         New-Item -ItemType Directory -Path $InstDir -Force | Out-Null
+        Expand-Archive -Path $OutZip -DestinationPath $env:RUNNER_TEMP -Force
+        $SrcDir = Join-Path $env:RUNNER_TEMP "cmakefmt-${Version}-${Target}"
         Copy-Item -Path (Join-Path $SrcDir "cmakefmt.exe") -Destination $InstDir
+
+    # ── Add Windows binary to PATH ─────────────────────────────────────────
+    - name: Add cmakefmt to PATH (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $InstDir = Join-Path $env:USERPROFILE ".cmakefmt-bin"
         $InstDir | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
     # ── Optionally run cmakefmt ────────────────────────────────────────────
     - name: Run cmakefmt
       if: inputs.args != ''
+      working-directory: ${{ inputs.working-directory || github.workspace }}
       shell: bash
       env:
         CMAKEFMT_ARGS: ${{ inputs.args }}
       run: |
-        # Word-split intentional: args is a space-separated list of flags.
+        # CMAKEFMT_ARGS is intentionally word-split so users can pass multiple
+        # flags (e.g. "--check --report-format github ."). Paths containing
+        # spaces are not supported — use args: "" and call cmakefmt directly.
         # shellcheck disable=SC2086
         cmakefmt $CMAKEFMT_ARGS

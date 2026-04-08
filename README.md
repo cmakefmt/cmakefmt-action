@@ -30,13 +30,15 @@ jobs:
 `--check` exits non-zero if any file would change. `--report-format github`
 emits inline annotations on pull request diffs.
 
-### Default usage (format entire repository)
+### Default usage (check entire repository)
 
 ```yaml
 - uses: cmakefmt/cmakefmt-action@v1
 ```
 
-This runs `cmakefmt .` — formats all CMake files in the working directory.
+This runs `cmakefmt --check --report-format github .` — checks all CMake
+files in the working directory and emits inline PR annotations for any that
+would be reformatted. The step fails if any file is not formatted correctly.
 
 ### Pin a specific version
 
@@ -79,12 +81,23 @@ jobs:
       - uses: cmakefmt/cmakefmt-action@v1
 ```
 
+### Run in a subdirectory
+
+```yaml
+- uses: cmakefmt/cmakefmt-action@v1
+  with:
+    args: '--check --report-format github cmake'
+    working-directory: src
+```
+
 ## Inputs
 
-| Input     | Default  | Description                                                             |
-|-----------|----------|-------------------------------------------------------------------------|
-| `version` | `latest` | Version to install (e.g. `0.2.0`). Defaults to the newest release.      |
-| `args`    | `.`      | Arguments passed to `cmakefmt`. Set to `""` to install without running. |
+| Input               | Default                              | Description                                                                                                      |
+|---------------------|--------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `version`           | `latest`                             | Version to install (e.g. `0.2.0`). Defaults to the newest release.                                              |
+| `args`              | `--check --report-format github .`   | Arguments passed to `cmakefmt`. Set to `""` to install without running. Paths with spaces require install-only mode. |
+| `working-directory` | _(repo root)_                        | Directory from which to run `cmakefmt`. Useful for monorepos.                                                    |
+| `token`             | `${{ github.token }}`                | GitHub token for version resolution. The default built-in token is sufficient.                                   |
 
 ## Outputs
 
