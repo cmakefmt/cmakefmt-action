@@ -1,7 +1,9 @@
 # cmakefmt-action
 
-Official GitHub Action for [cmakefmt](https://cmakefmt.dev) — a fast, native
-CMake formatter.
+[![CI](https://github.com/cmakefmt/cmakefmt-action/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/cmakefmt/cmakefmt-action/actions/workflows/ci.yml)
+[![GitHub Marketplace](https://img.shields.io/badge/GitHub%20Actions-Marketplace-blue?logo=github)](https://github.com/marketplace/actions/cmakefmt-action)
+
+Official GitHub Action for [cmakefmt](https://cmakefmt.dev) — a fast, native CMake formatter.
 
 Installs `cmakefmt` on Linux, macOS, and Windows runners and runs it on the
 entire repository by default.
