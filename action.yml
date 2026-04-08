@@ -203,8 +203,9 @@ runs:
         Invoke-WebRequest -Uri "${BaseUrl}/${Archive}" -OutFile $OutZip -UseBasicParsing
         Write-Host "Verifying checksum"
         $Checksums = (Invoke-WebRequest -Uri "${BaseUrl}/SHA256SUMS" -UseBasicParsing).Content
-        $Expected  = ($Checksums -split "`n" |
-                      Where-Object { ($_ -split '\s+')[1] -eq $Archive }) -replace '\s.*', ''
+        $Line      = ($Checksums -split "`n" |
+                      Where-Object { ($_ -split '\s+')[1] -eq $Archive })[0]
+        $Expected  = ($Line -split '\s+')[0]
         $Actual    = (Get-FileHash -Path $OutZip -Algorithm SHA256).Hash.ToLower()
         if ($Actual -ne $Expected.ToLower()) {
           Write-Host "::error::Checksum mismatch for ${Archive} (expected=${Expected} actual=${Actual})"
