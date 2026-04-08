@@ -203,7 +203,7 @@ runs:
         Invoke-WebRequest -Uri "${BaseUrl}/${Archive}" -OutFile $OutZip -UseBasicParsing
         Write-Host "Verifying checksum"
         $Checksums = (Invoke-WebRequest -Uri "${BaseUrl}/SHA256SUMS" -UseBasicParsing).Content
-        $Line      = ($Checksums -split "`n" |
+        $Line      = ($Checksums -split "`r?`n" |
                       Where-Object { ($_ -split '\s+')[1] -eq $Archive })[0]
         $Expected  = ($Line -split '\s+')[0]
         $Actual    = (Get-FileHash -Path $OutZip -Algorithm SHA256).Hash.ToLower()
