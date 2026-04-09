@@ -156,9 +156,43 @@ export async function install(version: string): Promise<string> {
 // Entry point
 // ---------------------------------------------------------------------------
 
+export function buildArgs(
+  args: string,
+  checkOnly: boolean,
+  diff: boolean,
+  reportFormat: string,
+): string[] {
+  const argArray = args.trim().split(/\s+/);
+
+  // Inject --check unless the user already specified --check or --in-place
+  if (
+    checkOnly &&
+    !argArray.includes("--check") &&
+    !argArray.includes("--in-place") &&
+    !argArray.includes("-i")
+  ) {
+    argArray.unshift("--check");
+  }
+
+  // Inject --diff unless the user already specified it in args
+  if (diff && !argArray.includes("--diff")) {
+    argArray.unshift("--diff");
+  }
+
+  // Inject --report-format unless the user already specified it in args
+  if (reportFormat && !argArray.includes("--report-format")) {
+    argArray.unshift("--report-format", reportFormat);
+  }
+
+  return argArray;
+}
+
 export async function run(): Promise<void> {
   const versionInput = core.getInput("version");
   const args = core.getInput("args");
+  const checkOnly = core.getInput("check-only") !== "false";
+  const diff = core.getInput("diff") === "true";
+  const reportFormat = core.getInput("report-format");
   const workingDirectory = core.getInput("working-directory");
   const token = core.getInput("token", { required: true });
 
@@ -170,7 +204,7 @@ export async function run(): Promise<void> {
   core.addPath(installDir);
 
   if (args) {
-    const argArray = args.trim().split(/\s+/);
+    const argArray = buildArgs(args, checkOnly, diff, reportFormat);
     const options: exec.ExecOptions = {};
     if (workingDirectory) {
       options.cwd = workingDirectory;

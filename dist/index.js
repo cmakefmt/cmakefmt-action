@@ -28243,6 +28243,7 @@ exports.resolveVersion = resolveVersion;
 exports.computeSha256 = computeSha256;
 exports.verifyChecksum = verifyChecksum;
 exports.install = install;
+exports.buildArgs = buildArgs;
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
 const exec = __importStar(__nccwpck_require__(5236));
@@ -28351,9 +28352,31 @@ async function install(version) {
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
+function buildArgs(args, checkOnly, diff, reportFormat) {
+    const argArray = args.trim().split(/\s+/);
+    // Inject --check unless the user already specified --check or --in-place
+    if (checkOnly &&
+        !argArray.includes("--check") &&
+        !argArray.includes("--in-place") &&
+        !argArray.includes("-i")) {
+        argArray.unshift("--check");
+    }
+    // Inject --diff unless the user already specified it in args
+    if (diff && !argArray.includes("--diff")) {
+        argArray.unshift("--diff");
+    }
+    // Inject --report-format unless the user already specified it in args
+    if (reportFormat && !argArray.includes("--report-format")) {
+        argArray.unshift("--report-format", reportFormat);
+    }
+    return argArray;
+}
 async function run() {
     const versionInput = core.getInput("version");
     const args = core.getInput("args");
+    const checkOnly = core.getInput("check-only") !== "false";
+    const diff = core.getInput("diff") === "true";
+    const reportFormat = core.getInput("report-format");
     const workingDirectory = core.getInput("working-directory");
     const token = core.getInput("token", { required: true });
     const version = await resolveVersion(versionInput, token);
@@ -28362,7 +28385,7 @@ async function run() {
     const installDir = await install(version);
     core.addPath(installDir);
     if (args) {
-        const argArray = args.trim().split(/\s+/);
+        const argArray = buildArgs(args, checkOnly, diff, reportFormat);
         const options = {};
         if (workingDirectory) {
             options.cwd = workingDirectory;

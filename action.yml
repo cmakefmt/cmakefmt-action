@@ -21,10 +21,34 @@ inputs:
   args:
     description: >
       Arguments to pass to cmakefmt after installation. Defaults to
-      check mode with GitHub annotations on the entire repository.
+      the entire repository. Flags like --check and --report-format are
+      injected automatically from their dedicated inputs.
       Set to "" to install cmakefmt without running it.
     required: false
-    default: '--check --report-format github .'
+    default: '.'
+
+  check-only:
+    description: >
+      When true (default), only check whether files would be reformatted
+      and exit non-zero if any would change. When false, reformat files
+      in-place. Skipped if args already contains --check or --in-place.
+    required: false
+    default: 'true'
+
+  diff:
+    description: >
+      When true, print a unified diff of the changes cmakefmt would make.
+      Injected as --diff. Skipped if args already contains --diff.
+    required: false
+    default: 'false'
+
+  report-format:
+    description: >
+      Output format for cmakefmt results. Injected as --report-format
+      unless args already contains --report-format. Set to "" to disable.
+      Supported values: human, github, json, checkstyle.
+    required: false
+    default: 'github'
 
   working-directory:
     description: >

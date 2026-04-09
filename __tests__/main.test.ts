@@ -50,6 +50,7 @@ import * as tc from "@actions/tool-cache";
 import * as os from "os";
 
 import {
+  buildArgs,
   computeSha256,
   getTarget,
   install,
@@ -333,6 +334,70 @@ describe("install", () => {
 });
 
 // ---------------------------------------------------------------------------
+// buildArgs
+// ---------------------------------------------------------------------------
+
+describe("buildArgs", () => {
+  it("injects --check and --report-format by default", () => {
+    expect(buildArgs(".", true, false, "github")).toEqual([
+      "--report-format", "github", "--check", ".",
+    ]);
+  });
+
+  it("skips --check when check-only is false", () => {
+    expect(buildArgs(".", false, false, "github")).toEqual([
+      "--report-format", "github", ".",
+    ]);
+  });
+
+  it("skips --check injection when args already contains --check", () => {
+    expect(buildArgs("--check src/", true, false, "github")).toEqual([
+      "--report-format", "github", "--check", "src/",
+    ]);
+  });
+
+  it("skips --check injection when args contains --in-place", () => {
+    expect(buildArgs("--in-place .", true, false, "github")).toEqual([
+      "--report-format", "github", "--in-place", ".",
+    ]);
+  });
+
+  it("skips --check injection when args contains -i", () => {
+    expect(buildArgs("-i .", true, false, "github")).toEqual([
+      "--report-format", "github", "-i", ".",
+    ]);
+  });
+
+  it("injects --diff when enabled", () => {
+    expect(buildArgs(".", true, true, "github")).toEqual([
+      "--report-format", "github", "--diff", "--check", ".",
+    ]);
+  });
+
+  it("skips --diff injection when args already contains --diff", () => {
+    expect(buildArgs("--diff .", true, true, "github")).toEqual([
+      "--report-format", "github", "--check", "--diff", ".",
+    ]);
+  });
+
+  it("skips --report-format injection when args already contains it", () => {
+    expect(buildArgs("--report-format json .", true, false, "github")).toEqual([
+      "--check", "--report-format", "json", ".",
+    ]);
+  });
+
+  it("skips --report-format injection when input is empty", () => {
+    expect(buildArgs(".", true, false, "")).toEqual(["--check", "."]);
+  });
+
+  it("handles args with extra whitespace", () => {
+    expect(buildArgs("  .  ", true, false, "github")).toEqual([
+      "--report-format", "github", "--check", ".",
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // run (integration)
 // ---------------------------------------------------------------------------
 
@@ -345,7 +410,10 @@ describe("run", () => {
     (core.getInput as jest.Mock).mockImplementation((name: string) => {
       const inputs: Record<string, string> = {
         version: "0.3.0",
-        args: "--check .",
+        args: ".",
+        "check-only": "true",
+        diff: "false",
+        "report-format": "github",
         "working-directory": "",
         token: "test-token",
       };
@@ -366,11 +434,55 @@ describe("run", () => {
     expect(core.addPath).toHaveBeenCalledWith("/cached/cmakefmt");
   });
 
-  it("runs cmakefmt with the provided args", async () => {
+  it("injects --check and --report-format by default", async () => {
     await run();
     expect(exec.exec).toHaveBeenCalledWith(
       "cmakefmt",
-      ["--check", "."],
+      ["--report-format", "github", "--check", "."],
+      {},
+    );
+  });
+
+  it("injects --diff when enabled", async () => {
+    (core.getInput as jest.Mock).mockImplementation((name: string) => {
+      const inputs: Record<string, string> = {
+        version: "0.3.0",
+        args: ".",
+        "check-only": "true",
+        diff: "true",
+        "report-format": "github",
+        "working-directory": "",
+        token: "test-token",
+      };
+      return inputs[name] ?? "";
+    });
+
+    await run();
+    expect(exec.exec).toHaveBeenCalledWith(
+      "cmakefmt",
+      ["--report-format", "github", "--diff", "--check", "."],
+      {},
+    );
+  });
+
+  it("skips --check when check-only is false", async () => {
+    (core.getInput as jest.Mock).mockImplementation((name: string) => {
+      const inputs: Record<string, string> = {
+        version: "0.3.0",
+        args: ".",
+        "check-only": "false",
+        diff: "false",
+        "report-format": "github",
+        "working-directory": "",
+        token: "test-token",
+      };
+      return inputs[name] ?? "";
+    });
+
+    await run();
+    expect(exec.exec).toHaveBeenCalledWith(
+      "cmakefmt",
+      ["--report-format", "github", "."],
       {},
     );
   });
@@ -379,7 +491,10 @@ describe("run", () => {
     (core.getInput as jest.Mock).mockImplementation((name: string) => {
       const inputs: Record<string, string> = {
         version: "0.3.0",
-        args: "--check .",
+        args: ".",
+        "check-only": "true",
+        diff: "false",
+        "report-format": "github",
         "working-directory": "sub",
         token: "test-token",
       };
@@ -389,7 +504,7 @@ describe("run", () => {
     await run();
     expect(exec.exec).toHaveBeenCalledWith(
       "cmakefmt",
-      ["--check", "."],
+      ["--report-format", "github", "--check", "."],
       { cwd: "sub" },
     );
   });
@@ -399,6 +514,9 @@ describe("run", () => {
       const inputs: Record<string, string> = {
         version: "0.3.0",
         args: "",
+        "check-only": "true",
+        diff: "false",
+        "report-format": "github",
         "working-directory": "",
         token: "test-token",
       };
@@ -407,5 +525,27 @@ describe("run", () => {
 
     await run();
     expect(exec.exec).not.toHaveBeenCalled();
+  });
+
+  it("skips --report-format injection when input is empty", async () => {
+    (core.getInput as jest.Mock).mockImplementation((name: string) => {
+      const inputs: Record<string, string> = {
+        version: "0.3.0",
+        args: ".",
+        "check-only": "true",
+        diff: "false",
+        "report-format": "",
+        "working-directory": "",
+        token: "test-token",
+      };
+      return inputs[name] ?? "";
+    });
+
+    await run();
+    expect(exec.exec).toHaveBeenCalledWith(
+      "cmakefmt",
+      ["--check", "."],
+      {},
+    );
   });
 });

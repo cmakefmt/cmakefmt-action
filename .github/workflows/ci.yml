@@ -146,7 +146,7 @@ jobs:
         id: check
         uses: ./
         with:
-          args: '--check unformatted.cmake'
+          args: 'unformatted.cmake'
         continue-on-error: true
 
       - name: Assert that check correctly reported failure
@@ -177,5 +177,5 @@ jobs:
       - name: Run action scoped to subdirectory
         uses: ./
         with:
-          args: '--check cmake'
+          args: 'cmake'
           working-directory: sub

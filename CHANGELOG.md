@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `check-only` input (default `true`): when true, injects `--check` so
+  cmakefmt only verifies formatting. Set to `false` to reformat in-place,
+  useful for auto-fix workflows. Skipped if `args` already contains
+  `--check`, `--in-place`, or `-i`.
+- `diff` input (default `false`): when true, injects `--diff` to print a
+  unified diff of the changes cmakefmt would make. Now composes correctly
+  with `--check` and `--report-format` as of cmakefmt v0.4.0.
+- `report-format` input (default `github`): controls the output format
+  (`human`, `github`, `json`, `checkstyle`). Injected as
+  `--report-format <value>` unless `args` already contains the flag.
+  Set to `""` to disable.
+
+### Changed
+
+- Default `args` simplified from `--check --report-format github .` to
+  `.`; the `--check` and `--report-format github` flags are now handled
+  by the dedicated `check-only` and `report-format` inputs.
+
+---
+
 ## v2.0.0
 
 ### Changed

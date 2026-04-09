@@ -21,40 +21,33 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
       - uses: cmakefmt/cmakefmt-action@v2
-        with:
-          args: '--check --report-format github .'
 ```
 
-`--check` exits non-zero if any file would change. `--report-format github`
-emits inline annotations on pull request diffs.
-
-### Default usage (check entire repository)
-
-```yaml
-- uses: cmakefmt/cmakefmt-action@v2
-```
-
-This runs `cmakefmt --check --report-format github .` — checks all CMake
-files in the working directory and emits inline PR annotations for any that
+By default the action runs `cmakefmt --check --report-format github .` —
+it checks all CMake files and emits inline PR annotations for any that
 would be reformatted. The step fails if any file is not formatted correctly.
 
-> **Note:** The default does not print a diff of the changes. To see what
-> `cmakefmt` would change in the CI log, use install-only mode and add
-> `--diff`:
+> **Note:** The default does not print a diff. To see what `cmakefmt`
+> would change in the CI log, add `diff: true`:
 >
 > ```yaml
 > - uses: cmakefmt/cmakefmt-action@v2
 >   with:
->     args: ''
->
-> - run: cmakefmt --check --diff --report-format github .
+>     diff: true
 > ```
->
-> `--diff` is currently suppressed when combined with `--report-format`
-> in a single invocation, so splitting into two steps is recommended if
-> you want both the diff output and GitHub annotations.
+
+### Auto-fix mode (reformat in-place)
+
+```yaml
+- uses: cmakefmt/cmakefmt-action@v2
+  with:
+    check-only: false
+```
+
+This reformats all CMake files in-place. Useful in workflows that
+auto-commit formatting fixes (e.g. with `stefanzweifel/git-auto-commit-action`).
 
 ### Pin a specific version
 
@@ -80,7 +73,15 @@ would be reformatted. The step fails if any file is not formatted correctly.
 ```yaml
 - uses: cmakefmt/cmakefmt-action@v2
   with:
-    args: '--check --report-format github --config .cmakefmt.yaml src/'
+    args: '--config .cmakefmt.yaml src/'
+```
+
+### Use human-readable output instead of annotations
+
+```yaml
+- uses: cmakefmt/cmakefmt-action@v2
+  with:
+    report-format: human
 ```
 
 ### Matrix across OS
@@ -102,18 +103,21 @@ jobs:
 ```yaml
 - uses: cmakefmt/cmakefmt-action@v2
   with:
-    args: '--check --report-format github cmake'
+    args: 'cmake'
     working-directory: src
 ```
 
 ## Inputs
 
-| Input               | Default                              | Description                                                                                                      |
-|---------------------|--------------------------------------|------------------------------------------------------------------------------------------------------------------|
-| `version`           | `latest`                             | Version to install (e.g. `0.2.0`). Defaults to the newest release.                                              |
-| `args`              | `--check --report-format github .`   | Arguments passed to `cmakefmt`. Set to `""` to install without running. Paths with spaces require install-only mode. |
-| `working-directory` | _(repo root)_                        | Directory from which to run `cmakefmt`. Useful for monorepos.                                                    |
-| `token`             | `${{ github.token }}`                | GitHub token for version resolution. The default built-in token is sufficient.                                   |
+| Input               | Default               | Description                                                                                                                 |
+|---------------------|-----------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| `version`           | `latest`              | Version to install (e.g. `0.2.0`). Defaults to the newest release.                                                         |
+| `args`              | `.`                   | Paths and extra flags passed to `cmakefmt`. Set to `""` to install without running.                                        |
+| `check-only`        | `true`                | Only check formatting (exit non-zero if files would change). Set to `false` to reformat in-place.                          |
+| `diff`              | `false`               | Print a unified diff of the changes. Requires cmakefmt >= 0.4.0.                                                          |
+| `report-format`     | `github`              | Output format (`human`, `github`, `json`, `checkstyle`). Set to `""` to disable. Skipped if `args` already contains the flag. |
+| `working-directory` | _(repo root)_         | Directory from which to run `cmakefmt`. Useful for monorepos.                                                               |
+| `token`             | `${{ github.token }}` | GitHub token for version resolution. The default built-in token is sufficient.                                              |
 
 ## Outputs
 
