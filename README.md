@@ -40,6 +40,22 @@ This runs `cmakefmt --check --report-format github .` — checks all CMake
 files in the working directory and emits inline PR annotations for any that
 would be reformatted. The step fails if any file is not formatted correctly.
 
+> **Note:** The default does not print a diff of the changes. To see what
+> `cmakefmt` would change in the CI log, use install-only mode and add
+> `--diff`:
+>
+> ```yaml
+> - uses: cmakefmt/cmakefmt-action@v2
+>   with:
+>     args: ''
+>
+> - run: cmakefmt --check --diff --report-format github .
+> ```
+>
+> `--diff` is currently suppressed when combined with `--report-format`
+> in a single invocation, so splitting into two steps is recommended if
+> you want both the diff output and GitHub annotations.
+
 ### Pin a specific version
 
 ```yaml
