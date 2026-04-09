@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: cmakefmt/cmakefmt-action@v1
+      - uses: cmakefmt/cmakefmt-action@v2
         with:
           args: '--check --report-format github .'
 ```
@@ -33,7 +33,7 @@ emits inline annotations on pull request diffs.
 ### Default usage (check entire repository)
 
 ```yaml
-- uses: cmakefmt/cmakefmt-action@v1
+- uses: cmakefmt/cmakefmt-action@v2
 ```
 
 This runs `cmakefmt --check --report-format github .` — checks all CMake
@@ -43,7 +43,7 @@ would be reformatted. The step fails if any file is not formatted correctly.
 ### Pin a specific version
 
 ```yaml
-- uses: cmakefmt/cmakefmt-action@v1
+- uses: cmakefmt/cmakefmt-action@v2
   with:
     version: '0.2.0'
 ```
@@ -51,7 +51,7 @@ would be reformatted. The step fails if any file is not formatted correctly.
 ### Install only, run manually
 
 ```yaml
-- uses: cmakefmt/cmakefmt-action@v1
+- uses: cmakefmt/cmakefmt-action@v2
   with:
     args: ''   # skip the built-in run step
 
@@ -62,7 +62,7 @@ would be reformatted. The step fails if any file is not formatted correctly.
 ### Custom arguments
 
 ```yaml
-- uses: cmakefmt/cmakefmt-action@v1
+- uses: cmakefmt/cmakefmt-action@v2
   with:
     args: '--check --report-format github --config .cmakefmt.yaml src/'
 ```
@@ -77,14 +77,14 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: cmakefmt/cmakefmt-action@v1
+      - uses: actions/checkout@v6
+      - uses: cmakefmt/cmakefmt-action@v2
 ```
 
 ### Run in a subdirectory
 
 ```yaml
-- uses: cmakefmt/cmakefmt-action@v1
+- uses: cmakefmt/cmakefmt-action@v2
   with:
     args: '--check --report-format github cmake'
     working-directory: src
