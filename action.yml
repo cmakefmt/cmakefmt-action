@@ -46,7 +46,7 @@ inputs:
   since:
     description: >
       Git base ref used by scope: changed. Ignored for other scopes. If
-      omitted on pull_request events, defaults to origin/${{ github.base_ref }}.
+      omitted on pull_request events, defaults to the pull request base branch.
       If omitted on push events, defaults to the push event's before SHA.
     required: false
     default: ''
