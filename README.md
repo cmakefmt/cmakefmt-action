@@ -194,6 +194,15 @@ jobs:
 |-----------|----------------------------------------------|
 | `version` | The installed version (without leading `v`). |
 
+## Publishing
+
+Releases are promoted through the **Release** workflow. Run it manually with a
+version such as `2.2.0`; the workflow verifies the action, creates the
+`v2.2.0` tag, publishes the GitHub Release, and moves the floating `v2` tag.
+
+Direct tag pushes still work, but the release workflow runs the same preflight
+checks before publishing anything.
+
 ## Platforms
 
 | Runner                    | Architecture | Binary used                          |

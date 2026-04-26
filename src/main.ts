@@ -421,54 +421,61 @@ function remoteBranchFromSince(since: string): string {
   return match?.[1] ?? "";
 }
 
-async function gitExit(args: string[]): Promise<number> {
+async function gitExit(args: string[], cwd?: string): Promise<number> {
   return exec.exec("git", args, {
+    cwd,
     ignoreReturnCode: true,
     silent: true,
   });
 }
 
-async function fetchRemoteBranch(since: string): Promise<void> {
+async function fetchRemoteBranch(
+  since: string,
+  cwd?: string,
+): Promise<void> {
   const branch = remoteBranchFromSince(since);
   if (!branch) return;
 
-  await gitExit([
-    "fetch",
-    "--no-tags",
-    "--prune",
-    "origin",
-    `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
-  ]);
+  await gitExit(
+    [
+      "fetch",
+      "--no-tags",
+      "--prune",
+      "origin",
+      `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ],
+    cwd,
+  );
 }
 
-async function hasMergeBase(since: string): Promise<boolean> {
-  return (await gitExit(["merge-base", since, "HEAD"])) === 0;
+async function hasMergeBase(since: string, cwd?: string): Promise<boolean> {
+  return (await gitExit(["merge-base", since, "HEAD"], cwd)) === 0;
 }
 
-export async function prepareChangedScope(args: string[]): Promise<void> {
+export async function prepareChangedScope(
+  args: string[],
+  cwd?: string,
+): Promise<void> {
   if (!hasFlag(args, "--changed")) return;
 
   const since = getFlagValue(args, "--since");
   if (!since) return;
 
-  await fetchRemoteBranch(since);
-  if (await hasMergeBase(since)) return;
+  await fetchRemoteBranch(since, cwd);
+  if (await hasMergeBase(since, cwd)) return;
 
   core.info(
     "Fetching additional Git history so scope: changed can find a merge base",
   );
-  const unshallow = await gitExit([
-    "fetch",
-    "--no-tags",
-    "--prune",
-    "--unshallow",
-    "origin",
-  ]);
+  const unshallow = await gitExit(
+    ["fetch", "--no-tags", "--prune", "--unshallow", "origin"],
+    cwd,
+  );
   if (unshallow !== 0) {
-    await gitExit(["fetch", "--no-tags", "--prune", "origin"]);
+    await gitExit(["fetch", "--no-tags", "--prune", "origin"], cwd);
   }
 
-  await fetchRemoteBranch(since);
+  await fetchRemoteBranch(since, cwd);
 }
 
 function removeReportFormat(args: string[]): string[] {
@@ -605,7 +612,7 @@ export async function run(): Promise<void> {
   });
   if (argArray.length === 0) return;
 
-  await prepareChangedScope(argArray);
+  await prepareChangedScope(argArray, workingDirectory || undefined);
 
   const options: exec.ExecOptions = {};
   let stdout = "";

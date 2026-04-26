@@ -924,6 +924,44 @@ describe("run", () => {
     );
   });
 
+  it("prepares changed-file scope from the working directory", async () => {
+    (core.getInput as jest.Mock).mockImplementation((name: string) => {
+      const inputs: Record<string, string> = {
+        version: "0.3.0",
+        args: ".",
+        "check-only": "true",
+        diff: "false",
+        "report-format": "github",
+        "working-directory": "nested",
+        mode: "",
+        scope: "changed",
+        paths: "",
+        since: "HEAD~1",
+        token: "test-token",
+      };
+      return inputs[name] ?? "";
+    });
+
+    await run();
+    expect(exec.exec).toHaveBeenCalledWith(
+      "git",
+      ["merge-base", "HEAD~1", "HEAD"],
+      expect.objectContaining({ cwd: "nested" }),
+    );
+    expect(exec.exec).toHaveBeenCalledWith(
+      "cmakefmt",
+      [
+        "--report-format",
+        "github",
+        "--check",
+        "--changed",
+        "--since",
+        "HEAD~1",
+      ],
+      expect.objectContaining({ cwd: "nested", ignoreReturnCode: true }),
+    );
+  });
+
   it("sets failure when cmakefmt exits non-zero", async () => {
     (exec.exec as jest.Mock).mockResolvedValue(1);
 

@@ -8,6 +8,12 @@ on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, for example 2.2.0 or v2.2.0"
+        required: true
+        type: string
 
 permissions: read-all
 
@@ -24,19 +30,118 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Compute release metadata
+        id: meta
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          RAW="${INPUT_VERSION:-${GITHUB_REF_NAME}}"
+          VERSION="${RAW#v}"
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must look like 2.2.0 or v2.2.0"
+            exit 1
+          fi
+          TAG="v${VERSION}"
+          MAJOR="${TAG%%.*}"
+          {
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+            echo "major=${MAJOR}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: Check dist/ is up to date
+        shell: bash
+        run: |
+          if [[ -n "$(git status --porcelain dist/)" ]]; then
+            echo "::error::dist/ is out of date — run 'npm run build' and commit"
+            git diff --stat dist/
+            exit 1
+          fi
+
+      - name: Smoke test setup mode
+        uses: ./
+        with:
+          mode: setup
+
+      - name: Verify installed binary
+        shell: bash
+        run: cmakefmt --version
+
+      - name: Create changed-scope smoke fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir changed-scope-smoke
+          cd changed-scope-smoke
+          git init -b main
+          git config user.name "cmakefmt release"
+          git config user.email "release@cmakefmt.dev"
+          cat > CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.25)
+          project(before)
+          EOF
+          git add CMakeLists.txt
+          git commit -m "Initial CMake file"
+          cat > CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.25)
+          project(after)
+          EOF
+          git add CMakeLists.txt
+          git commit -m "Update CMake file"
+
+      - name: Smoke test changed scope
+        uses: ./
+        with:
+          working-directory: changed-scope-smoke
+          scope: changed
+          since: HEAD~1
+          mode: diff
+
+      - name: Create release tag
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+          if git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+            echo "::error::Tag ${TAG} already exists"
+            exit 1
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${TAG}"
+          git push origin "refs/tags/${TAG}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ steps.meta.outputs.tag }}
           generate_release_notes: true
 
       - name: Update floating major tag
         shell: bash
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          MAJOR: ${{ steps.meta.outputs.major }}
         run: |
           set -euo pipefail
-          TAG="${{ github.ref_name }}"
-          MAJOR="${TAG%%.*}"          # e.g. v1.2.3 → v1
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag --force "${MAJOR}"

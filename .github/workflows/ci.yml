@@ -97,6 +97,22 @@ jobs:
         shell: bash
         run: cmakefmt --version
 
+  # ── Test: action metadata loads and setup mode works ────────────────────
+  test-setup-mode:
+    name: setup-mode
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install cmakefmt via setup mode
+        uses: ./
+        with:
+          mode: setup
+
+      - name: Verify cmakefmt is on PATH
+        shell: bash
+        run: cmakefmt --version
+
   # ── Test: pinned version ─────────────────────────────────────────────────
   test-pinned-version:
     name: pinned-version
@@ -179,3 +195,40 @@ jobs:
         with:
           args: 'cmake'
           working-directory: sub
+
+  # ── Test: changed-file scope with a real local Git range ────────────────
+  test-changed-scope:
+    name: changed-scope
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Create nested Git fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir changed-scope-smoke
+          cd changed-scope-smoke
+          git init -b main
+          git config user.name "cmakefmt CI"
+          git config user.email "ci@cmakefmt.dev"
+          cat > CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.25)
+          project(before)
+          EOF
+          git add CMakeLists.txt
+          git commit -m "Initial CMake file"
+          cat > CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.25)
+          project(after)
+          EOF
+          git add CMakeLists.txt
+          git commit -m "Update CMake file"
+
+      - name: Check changed CMake files
+        uses: ./
+        with:
+          working-directory: changed-scope-smoke
+          scope: changed
+          since: HEAD~1
+          mode: diff

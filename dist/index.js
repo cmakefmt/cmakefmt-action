@@ -28552,13 +28552,14 @@ function remoteBranchFromSince(since) {
     const match = /^origin\/(.+)$/.exec(since);
     return match?.[1] ?? "";
 }
-async function gitExit(args) {
+async function gitExit(args, cwd) {
     return exec.exec("git", args, {
+        cwd,
         ignoreReturnCode: true,
         silent: true,
     });
 }
-async function fetchRemoteBranch(since) {
+async function fetchRemoteBranch(since, cwd) {
     const branch = remoteBranchFromSince(since);
     if (!branch)
         return;
@@ -28568,32 +28569,26 @@ async function fetchRemoteBranch(since) {
         "--prune",
         "origin",
         `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
-    ]);
+    ], cwd);
 }
-async function hasMergeBase(since) {
-    return (await gitExit(["merge-base", since, "HEAD"])) === 0;
+async function hasMergeBase(since, cwd) {
+    return (await gitExit(["merge-base", since, "HEAD"], cwd)) === 0;
 }
-async function prepareChangedScope(args) {
+async function prepareChangedScope(args, cwd) {
     if (!hasFlag(args, "--changed"))
         return;
     const since = getFlagValue(args, "--since");
     if (!since)
         return;
-    await fetchRemoteBranch(since);
-    if (await hasMergeBase(since))
+    await fetchRemoteBranch(since, cwd);
+    if (await hasMergeBase(since, cwd))
         return;
     core.info("Fetching additional Git history so scope: changed can find a merge base");
-    const unshallow = await gitExit([
-        "fetch",
-        "--no-tags",
-        "--prune",
-        "--unshallow",
-        "origin",
-    ]);
+    const unshallow = await gitExit(["fetch", "--no-tags", "--prune", "--unshallow", "origin"], cwd);
     if (unshallow !== 0) {
-        await gitExit(["fetch", "--no-tags", "--prune", "origin"]);
+        await gitExit(["fetch", "--no-tags", "--prune", "origin"], cwd);
     }
-    await fetchRemoteBranch(since);
+    await fetchRemoteBranch(since, cwd);
 }
 function removeReportFormat(args) {
     const filtered = [];
@@ -28704,7 +28699,7 @@ async function run() {
     });
     if (argArray.length === 0)
         return;
-    await prepareChangedScope(argArray);
+    await prepareChangedScope(argArray, workingDirectory || undefined);
     const options = {};
     let stdout = "";
     options.ignoreReturnCode = true;

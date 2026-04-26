@@ -17,6 +17,14 @@
   and push workflows default to the push event's `before` commit.
 - GitHub Step Summary output with the installed version, command, outcome,
   local fix commands on failure, and JSON report counts when available.
+- CI smoke coverage for action metadata loading, `mode: setup`, and real
+  `scope: changed` execution against a local Git range.
+- Release workflow preflight checks: `npm ci`, unit tests, bundled `dist/`
+  freshness, setup-mode smoke test, and changed-scope smoke test all run
+  before the GitHub Release is created or the floating major tag is moved.
+- Manual release promotion via `workflow_dispatch`, which validates the
+  requested version, verifies the action, creates the tag, publishes the
+  release, and updates the floating major tag in one workflow.
 - `check-only` input (default `true`): when true, injects `--check` so
   cmakefmt only verifies formatting. Set to `false` to reformat in-place,
   useful for auto-fix workflows. Skipped if `args` already contains
