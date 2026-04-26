@@ -18,27 +18,58 @@ inputs:
     required: false
     default: 'latest'
 
+  mode:
+    description: >
+      High-level action mode. Supported values: check, diff, fix, setup.
+      check verifies formatting, diff verifies and prints a unified diff,
+      fix reformats in-place, and setup installs cmakefmt without running it.
+      If omitted, the legacy check-only/diff/args inputs control behaviour.
+    required: false
+    default: ''
+
+  scope:
+    description: >
+      File selection scope. Supported values: all, changed, staged.
+      all checks the configured paths, changed checks files changed since
+      the base ref, and staged checks staged Git-tracked files.
+    required: false
+    default: 'all'
+
+  paths:
+    description: >
+      Newline-delimited paths to pass to cmakefmt. Use this instead of args
+      when paths contain spaces or when checking multiple explicit roots.
+      Cannot be combined with custom args or scope values other than all.
+    required: false
+    default: ''
+
+  since:
+    description: >
+      Git base ref used by scope: changed. Ignored for other scopes. If
+      omitted on pull_request events, defaults to origin/${{ github.base_ref }}.
+      If omitted on push events, defaults to the push event's before SHA.
+    required: false
+    default: ''
+
   args:
     description: >
-      Arguments to pass to cmakefmt after installation. Defaults to
-      the entire repository. Flags like --check and --report-format are
-      injected automatically from their dedicated inputs.
-      Set to "" to install cmakefmt without running it.
+      Advanced arguments to pass to cmakefmt after installation. Defaults
+      to the entire repository. Prefer mode, scope, and paths for common
+      workflows. Set to "" to install cmakefmt without running it.
     required: false
     default: '.'
 
   check-only:
     description: >
-      When true (default), only check whether files would be reformatted
-      and exit non-zero if any would change. When false, reformat files
-      in-place. Skipped if args already contains --check or --in-place.
+      Legacy input. When true (default), inject --check. When false, inject
+      --in-place. Ignored when mode is set.
     required: false
     default: 'true'
 
   diff:
     description: >
-      When true, print a unified diff of the changes cmakefmt would make.
-      Injected as --diff. Skipped if args already contains --diff.
+      Legacy input. When true, print a unified diff of the changes cmakefmt
+      would make. Prefer mode: diff. Ignored when mode is set.
     required: false
     default: 'false'
 

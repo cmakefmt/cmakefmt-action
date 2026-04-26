@@ -4,6 +4,19 @@
 
 ### Added
 
+- `mode` input for common workflows: `check`, `diff`, `fix`, and `setup`.
+  This gives users a simpler first-choice API while preserving the advanced
+  `args` input.
+- `scope` input for file selection: `all`, `changed`, or `staged`.
+  `scope: changed` uses `--changed` and infers `origin/${{ github.base_ref }}`
+  on pull request workflows unless `since` is set.
+- `paths` input for newline-delimited explicit paths. This avoids shell-style
+  argument splitting for common multi-path workflows.
+- `since` input for choosing the Git base ref used by `scope: changed`.
+  If omitted, pull request workflows default to `origin/${{ github.base_ref }}`
+  and push workflows default to the push event's `before` commit.
+- GitHub Step Summary output with the installed version, command, outcome,
+  local fix commands on failure, and JSON report counts when available.
 - `check-only` input (default `true`): when true, injects `--check` so
   cmakefmt only verifies formatting. Set to `false` to reformat in-place,
   useful for auto-fix workflows. Skipped if `args` already contains
@@ -21,6 +34,10 @@
 - Default `args` simplified from `--check --report-format github .` to
   `.`; the `--check` and `--report-format github` flags are now handled
   by the dedicated `check-only` and `report-format` inputs.
+- `check-only: false` now injects `--in-place`, matching the documented
+  auto-fix behaviour.
+- The README now leads with strict whole-repo, changed-file, diff, setup,
+  explicit-path, and auto-format recipes.
 
 ---
 

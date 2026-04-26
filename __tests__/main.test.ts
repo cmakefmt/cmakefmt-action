@@ -24,6 +24,14 @@ jest.mock("@actions/core", () => ({
   addPath: jest.fn(),
   setFailed: jest.fn(),
   info: jest.fn(),
+  warning: jest.fn(),
+  summary: {
+    addHeading: jest.fn().mockReturnThis(),
+    addTable: jest.fn().mockReturnThis(),
+    addRaw: jest.fn().mockReturnThis(),
+    addCodeBlock: jest.fn().mockReturnThis(),
+    write: jest.fn().mockResolvedValue(undefined),
+  },
 }));
 
 jest.mock("@actions/exec", () => ({
@@ -54,6 +62,9 @@ import {
   computeSha256,
   getTarget,
   install,
+  parseArgs,
+  parseJsonSummary,
+  parsePaths,
   resolveVersion,
   run,
   verifyChecksum,
@@ -66,6 +77,22 @@ import {
 function mockPlatform(platform: string, arch: string): void {
   (os.platform as jest.Mock).mockReturnValue(platform);
   (os.arch as jest.Mock).mockReturnValue(arch);
+}
+
+function makeBuildArgsOptions(
+  overrides: Partial<Parameters<typeof buildArgs>[0]> = {},
+): Parameters<typeof buildArgs>[0] {
+  return {
+    args: ".",
+    checkOnly: true,
+    diff: false,
+    reportFormat: "github",
+    mode: "",
+    scope: "all",
+    paths: "",
+    since: "",
+    ...overrides,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -337,63 +364,278 @@ describe("install", () => {
 // buildArgs
 // ---------------------------------------------------------------------------
 
+describe("parseArgs", () => {
+  it("splits whitespace-delimited args", () => {
+    expect(parseArgs("--check src/")).toEqual(["--check", "src/"]);
+  });
+
+  it("preserves quoted values", () => {
+    expect(parseArgs('--config "path with spaces/.cmakefmt.yaml" .')).toEqual([
+      "--config",
+      "path with spaces/.cmakefmt.yaml",
+      ".",
+    ]);
+  });
+
+  it("throws on unterminated quotes", () => {
+    expect(() => parseArgs('"unterminated')).toThrow("Unterminated quote");
+  });
+});
+
+describe("parsePaths", () => {
+  it("reads newline-delimited paths and ignores blank lines and comments", () => {
+    expect(parsePaths("CMakeLists.txt\n\n# note\ncmake/modules\n")).toEqual([
+      "CMakeLists.txt",
+      "cmake/modules",
+    ]);
+  });
+});
+
 describe("buildArgs", () => {
   it("injects --check and --report-format by default", () => {
-    expect(buildArgs(".", true, false, "github")).toEqual([
+    expect(buildArgs(makeBuildArgsOptions())).toEqual([
       "--report-format", "github", "--check", ".",
     ]);
   });
 
-  it("skips --check when check-only is false", () => {
-    expect(buildArgs(".", false, false, "github")).toEqual([
-      "--report-format", "github", ".",
+  it("injects --in-place when legacy check-only is false", () => {
+    expect(buildArgs(makeBuildArgsOptions({ checkOnly: false }))).toEqual([
+      "--in-place", ".",
     ]);
   });
 
   it("skips --check injection when args already contains --check", () => {
-    expect(buildArgs("--check src/", true, false, "github")).toEqual([
+    expect(buildArgs(makeBuildArgsOptions({ args: "--check src/" }))).toEqual([
       "--report-format", "github", "--check", "src/",
     ]);
   });
 
   it("skips --check injection when args contains --in-place", () => {
-    expect(buildArgs("--in-place .", true, false, "github")).toEqual([
-      "--report-format", "github", "--in-place", ".",
+    expect(buildArgs(makeBuildArgsOptions({ args: "--in-place ." }))).toEqual([
+      "--in-place", ".",
     ]);
   });
 
   it("skips --check injection when args contains -i", () => {
-    expect(buildArgs("-i .", true, false, "github")).toEqual([
-      "--report-format", "github", "-i", ".",
+    expect(buildArgs(makeBuildArgsOptions({ args: "-i ." }))).toEqual([
+      "-i", ".",
     ]);
   });
 
   it("injects --diff when enabled", () => {
-    expect(buildArgs(".", true, true, "github")).toEqual([
+    expect(buildArgs(makeBuildArgsOptions({ diff: true }))).toEqual([
       "--report-format", "github", "--diff", "--check", ".",
     ]);
   });
 
+  it("does not inject --diff for in-place legacy auto-fix mode", () => {
+    expect(
+      buildArgs(makeBuildArgsOptions({ checkOnly: false, diff: true })),
+    ).toEqual(["--in-place", "."]);
+  });
+
   it("skips --diff injection when args already contains --diff", () => {
-    expect(buildArgs("--diff .", true, true, "github")).toEqual([
-      "--report-format", "github", "--check", "--diff", ".",
-    ]);
+    expect(
+      buildArgs(makeBuildArgsOptions({ args: "--diff .", diff: true })),
+    ).toEqual(["--report-format", "github", "--check", "--diff", "."]);
   });
 
   it("skips --report-format injection when args already contains it", () => {
-    expect(buildArgs("--report-format json .", true, false, "github")).toEqual([
-      "--check", "--report-format", "json", ".",
-    ]);
+    expect(
+      buildArgs(
+        makeBuildArgsOptions({ args: "--report-format json ." }),
+      ),
+    ).toEqual(["--check", "--report-format", "json", "."]);
+  });
+
+  it("detects --report-format=value", () => {
+    expect(
+      buildArgs(
+        makeBuildArgsOptions({ args: "--report-format=json ." }),
+      ),
+    ).toEqual(["--check", "--report-format=json", "."]);
   });
 
   it("skips --report-format injection when input is empty", () => {
-    expect(buildArgs(".", true, false, "")).toEqual(["--check", "."]);
+    expect(buildArgs(makeBuildArgsOptions({ reportFormat: "" }))).toEqual([
+      "--check", ".",
+    ]);
   });
 
   it("handles args with extra whitespace", () => {
-    expect(buildArgs("  .  ", true, false, "github")).toEqual([
+    expect(buildArgs(makeBuildArgsOptions({ args: "  .  " }))).toEqual([
       "--report-format", "github", "--check", ".",
     ]);
+  });
+
+  it("uses mode=diff as a high-level shortcut", () => {
+    expect(buildArgs(makeBuildArgsOptions({ mode: "diff" }))).toEqual([
+      "--report-format", "github", "--diff", "--check", ".",
+    ]);
+  });
+
+  it("lets mode override legacy diff input", () => {
+    expect(
+      buildArgs(makeBuildArgsOptions({ mode: "check", diff: true })),
+    ).toEqual(["--report-format", "github", "--check", "."]);
+  });
+
+  it("uses mode=fix as a high-level shortcut", () => {
+    expect(buildArgs(makeBuildArgsOptions({ mode: "fix" }))).toEqual([
+      "--in-place", ".",
+    ]);
+  });
+
+  it("uses mode=setup to skip running cmakefmt", () => {
+    expect(buildArgs(makeBuildArgsOptions({ mode: "setup" }))).toEqual([]);
+  });
+
+  it("uses paths instead of the default repository root", () => {
+    expect(
+      buildArgs(
+        makeBuildArgsOptions({
+          paths: "CMakeLists.txt\ncmake/modules",
+        }),
+      ),
+    ).toEqual([
+      "--report-format", "github", "--check", "CMakeLists.txt", "cmake/modules",
+    ]);
+  });
+
+  it("rejects paths with custom args", () => {
+    expect(() =>
+      buildArgs(
+        makeBuildArgsOptions({
+          args: "--config .cmakefmt.yaml .",
+          paths: "CMakeLists.txt",
+        }),
+      ),
+    ).toThrow("paths input cannot be combined");
+  });
+
+  it("rejects paths with scope=changed", () => {
+    expect(() =>
+      buildArgs(
+        makeBuildArgsOptions({
+          paths: "CMakeLists.txt",
+          scope: "changed",
+          since: "origin/main",
+        }),
+      ),
+    ).toThrow("scope input cannot be combined");
+  });
+
+  it("uses scope=changed with an explicit since ref", () => {
+    expect(
+      buildArgs(
+        makeBuildArgsOptions({
+          scope: "changed",
+          since: "origin/main",
+        }),
+      ),
+    ).toEqual([
+      "--report-format", "github", "--check", "--changed", "--since", "origin/main",
+    ]);
+  });
+
+  it("uses GITHUB_BASE_REF as the default changed base", () => {
+    process.env.GITHUB_BASE_REF = "main";
+    try {
+      expect(
+        buildArgs(makeBuildArgsOptions({ scope: "changed" })),
+      ).toEqual([
+        "--report-format", "github", "--check", "--changed", "--since", "origin/main",
+      ]);
+    } finally {
+      delete process.env.GITHUB_BASE_REF;
+    }
+  });
+
+  it("uses the push event before SHA as the default changed base", () => {
+    const eventPath = path.join(os.tmpdir(), "cmakefmt-action-push-event.json");
+    process.env.GITHUB_EVENT_NAME = "push";
+    process.env.GITHUB_EVENT_PATH = eventPath;
+
+    try {
+      fs.writeFileSync(
+        eventPath,
+        JSON.stringify({
+          before: "1234567890abcdef1234567890abcdef12345678",
+        }),
+      );
+      expect(
+        buildArgs(makeBuildArgsOptions({ scope: "changed" })),
+      ).toEqual([
+        "--report-format",
+        "github",
+        "--check",
+        "--changed",
+        "--since",
+        "1234567890abcdef1234567890abcdef12345678",
+      ]);
+    } finally {
+      delete process.env.GITHUB_EVENT_NAME;
+      delete process.env.GITHUB_EVENT_PATH;
+      try {
+        fs.unlinkSync(eventPath);
+      } catch {}
+    }
+  });
+
+  it("does not use the push before SHA for new-branch zero SHAs", () => {
+    const eventPath = path.join(
+      os.tmpdir(),
+      "cmakefmt-action-new-branch-event.json",
+    );
+    process.env.GITHUB_EVENT_NAME = "push";
+    process.env.GITHUB_EVENT_PATH = eventPath;
+
+    try {
+      fs.writeFileSync(eventPath, JSON.stringify({ before: "0".repeat(40) }));
+      expect(
+        buildArgs(makeBuildArgsOptions({ scope: "changed" })),
+      ).toEqual(["--report-format", "github", "--check", "."]);
+    } finally {
+      delete process.env.GITHUB_EVENT_NAME;
+      delete process.env.GITHUB_EVENT_PATH;
+      try {
+        fs.unlinkSync(eventPath);
+      } catch {}
+    }
+  });
+
+  it("uses scope=staged", () => {
+    expect(buildArgs(makeBuildArgsOptions({ scope: "staged" }))).toEqual([
+      "--report-format", "github", "--check", "--staged",
+    ]);
+  });
+
+  it("rejects invalid mode values", () => {
+    expect(() => buildArgs(makeBuildArgsOptions({ mode: "preview" }))).toThrow(
+      "Invalid mode",
+    );
+  });
+
+  it("rejects invalid scope values", () => {
+    expect(() => buildArgs(makeBuildArgsOptions({ scope: "repo" }))).toThrow(
+      "Invalid scope",
+    );
+  });
+});
+
+describe("parseJsonSummary", () => {
+  it("extracts the summary from JSON report output", () => {
+    expect(
+      parseJsonSummary(
+        JSON.stringify({
+          summary: { selected: 3, changed: 2, failed: 1 },
+        }),
+      ),
+    ).toEqual({ selected: 3, changed: 2, failed: 1 });
+  });
+
+  it("returns undefined for non-JSON output", () => {
+    expect(parseJsonSummary("human output")).toBeUndefined();
   });
 });
 
@@ -415,6 +657,10 @@ describe("run", () => {
         diff: "false",
         "report-format": "github",
         "working-directory": "",
+        mode: "",
+        scope: "all",
+        paths: "",
+        since: "",
         token: "test-token",
       };
       return inputs[name] ?? "";
@@ -439,8 +685,9 @@ describe("run", () => {
     expect(exec.exec).toHaveBeenCalledWith(
       "cmakefmt",
       ["--report-format", "github", "--check", "."],
-      {},
+      expect.objectContaining({ ignoreReturnCode: true }),
     );
+    expect(core.summary.write).toHaveBeenCalled();
   });
 
   it("injects --diff when enabled", async () => {
@@ -452,6 +699,10 @@ describe("run", () => {
         diff: "true",
         "report-format": "github",
         "working-directory": "",
+        mode: "",
+        scope: "all",
+        paths: "",
+        since: "",
         token: "test-token",
       };
       return inputs[name] ?? "";
@@ -461,11 +712,11 @@ describe("run", () => {
     expect(exec.exec).toHaveBeenCalledWith(
       "cmakefmt",
       ["--report-format", "github", "--diff", "--check", "."],
-      {},
+      expect.objectContaining({ ignoreReturnCode: true }),
     );
   });
 
-  it("skips --check when check-only is false", async () => {
+  it("injects --in-place when check-only is false", async () => {
     (core.getInput as jest.Mock).mockImplementation((name: string) => {
       const inputs: Record<string, string> = {
         version: "0.3.0",
@@ -474,6 +725,10 @@ describe("run", () => {
         diff: "false",
         "report-format": "github",
         "working-directory": "",
+        mode: "",
+        scope: "all",
+        paths: "",
+        since: "",
         token: "test-token",
       };
       return inputs[name] ?? "";
@@ -482,8 +737,8 @@ describe("run", () => {
     await run();
     expect(exec.exec).toHaveBeenCalledWith(
       "cmakefmt",
-      ["--report-format", "github", "."],
-      {},
+      ["--in-place", "."],
+      expect.objectContaining({ ignoreReturnCode: true }),
     );
   });
 
@@ -496,6 +751,10 @@ describe("run", () => {
         diff: "false",
         "report-format": "github",
         "working-directory": "sub",
+        mode: "",
+        scope: "all",
+        paths: "",
+        since: "",
         token: "test-token",
       };
       return inputs[name] ?? "";
@@ -505,7 +764,7 @@ describe("run", () => {
     expect(exec.exec).toHaveBeenCalledWith(
       "cmakefmt",
       ["--report-format", "github", "--check", "."],
-      { cwd: "sub" },
+      expect.objectContaining({ cwd: "sub", ignoreReturnCode: true }),
     );
   });
 
@@ -518,6 +777,10 @@ describe("run", () => {
         diff: "false",
         "report-format": "github",
         "working-directory": "",
+        mode: "",
+        scope: "all",
+        paths: "",
+        since: "",
         token: "test-token",
       };
       return inputs[name] ?? "";
@@ -525,6 +788,55 @@ describe("run", () => {
 
     await run();
     expect(exec.exec).not.toHaveBeenCalled();
+  });
+
+  it("does not run cmakefmt when mode is setup", async () => {
+    (core.getInput as jest.Mock).mockImplementation((name: string) => {
+      const inputs: Record<string, string> = {
+        version: "0.3.0",
+        args: ".",
+        "check-only": "true",
+        diff: "false",
+        "report-format": "github",
+        "working-directory": "",
+        mode: "setup",
+        scope: "all",
+        paths: "",
+        since: "",
+        token: "test-token",
+      };
+      return inputs[name] ?? "";
+    });
+
+    await run();
+    expect(exec.exec).not.toHaveBeenCalled();
+  });
+
+  it("strips --list-changed-files from failure summary fix command", async () => {
+    (core.getInput as jest.Mock).mockImplementation((name: string) => {
+      const inputs: Record<string, string> = {
+        version: "0.3.0",
+        args: "--list-changed-files .",
+        "check-only": "true",
+        diff: "false",
+        "report-format": "github",
+        "working-directory": "",
+        mode: "",
+        scope: "all",
+        paths: "",
+        since: "",
+        token: "test-token",
+      };
+      return inputs[name] ?? "";
+    });
+    (exec.exec as jest.Mock).mockResolvedValue(1);
+
+    await run();
+
+    expect(core.summary.addCodeBlock).toHaveBeenCalledWith(
+      "cmakefmt --in-place .",
+      "bash",
+    );
   });
 
   it("skips --report-format injection when input is empty", async () => {
@@ -536,6 +848,10 @@ describe("run", () => {
         diff: "false",
         "report-format": "",
         "working-directory": "",
+        mode: "",
+        scope: "all",
+        paths: "",
+        since: "",
         token: "test-token",
       };
       return inputs[name] ?? "";
@@ -545,7 +861,80 @@ describe("run", () => {
     expect(exec.exec).toHaveBeenCalledWith(
       "cmakefmt",
       ["--check", "."],
-      {},
+      expect.objectContaining({ ignoreReturnCode: true }),
+    );
+  });
+
+  it("uses high-level mode input", async () => {
+    (core.getInput as jest.Mock).mockImplementation((name: string) => {
+      const inputs: Record<string, string> = {
+        version: "0.3.0",
+        args: ".",
+        "check-only": "true",
+        diff: "false",
+        "report-format": "github",
+        "working-directory": "",
+        mode: "diff",
+        scope: "all",
+        paths: "",
+        since: "",
+        token: "test-token",
+      };
+      return inputs[name] ?? "";
+    });
+
+    await run();
+    expect(exec.exec).toHaveBeenCalledWith(
+      "cmakefmt",
+      ["--report-format", "github", "--diff", "--check", "."],
+      expect.objectContaining({ ignoreReturnCode: true }),
+    );
+  });
+
+  it("runs changed-file scope", async () => {
+    (core.getInput as jest.Mock).mockImplementation((name: string) => {
+      const inputs: Record<string, string> = {
+        version: "0.3.0",
+        args: ".",
+        "check-only": "true",
+        diff: "false",
+        "report-format": "github",
+        "working-directory": "",
+        mode: "",
+        scope: "changed",
+        paths: "",
+        since: "origin/main",
+        token: "test-token",
+      };
+      return inputs[name] ?? "";
+    });
+
+    await run();
+    expect(exec.exec).toHaveBeenCalledWith(
+      "cmakefmt",
+      [
+        "--report-format",
+        "github",
+        "--check",
+        "--changed",
+        "--since",
+        "origin/main",
+      ],
+      expect.objectContaining({ ignoreReturnCode: true }),
+    );
+  });
+
+  it("sets failure when cmakefmt exits non-zero", async () => {
+    (exec.exec as jest.Mock).mockResolvedValue(1);
+
+    await run();
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      "cmakefmt exited with code 1",
+    );
+    expect(core.summary.addCodeBlock).toHaveBeenCalledWith(
+      "cmakefmt --in-place .",
+      "bash",
     );
   });
 });

@@ -28243,7 +28243,11 @@ exports.resolveVersion = resolveVersion;
 exports.computeSha256 = computeSha256;
 exports.verifyChecksum = verifyChecksum;
 exports.install = install;
+exports.parseArgs = parseArgs;
+exports.parsePaths = parsePaths;
 exports.buildArgs = buildArgs;
+exports.prepareChangedScope = prepareChangedScope;
+exports.parseJsonSummary = parseJsonSummary;
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
 const exec = __importStar(__nccwpck_require__(5236));
@@ -28352,24 +28356,324 @@ async function install(version) {
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
-function buildArgs(args, checkOnly, diff, reportFormat) {
-    const argArray = args.trim().split(/\s+/);
-    // Inject --check unless the user already specified --check or --in-place
-    if (checkOnly &&
-        !argArray.includes("--check") &&
-        !argArray.includes("--in-place") &&
-        !argArray.includes("-i")) {
-        argArray.unshift("--check");
+function normalizeMode(mode) {
+    const normalized = mode.trim().toLowerCase();
+    if (normalized === "" ||
+        normalized === "check" ||
+        normalized === "diff" ||
+        normalized === "fix" ||
+        normalized === "setup") {
+        return normalized;
     }
-    // Inject --diff unless the user already specified it in args
-    if (diff && !argArray.includes("--diff")) {
-        argArray.unshift("--diff");
+    throw new Error(`Invalid mode "${mode}". Supported values: check, diff, fix, setup.`);
+}
+function normalizeScope(scope) {
+    const normalized = scope.trim().toLowerCase();
+    if (normalized === "" || normalized === "all")
+        return "all";
+    if (normalized === "changed" || normalized === "staged") {
+        return normalized;
     }
-    // Inject --report-format unless the user already specified it in args
-    if (reportFormat && !argArray.includes("--report-format")) {
-        argArray.unshift("--report-format", reportFormat);
+    throw new Error(`Invalid scope "${scope}". Supported values: all, changed, staged.`);
+}
+function parseArgs(input) {
+    const args = [];
+    let current = "";
+    let quote = "";
+    let escaping = false;
+    for (const char of input.trim()) {
+        if (escaping) {
+            current += char;
+            escaping = false;
+            continue;
+        }
+        if (char === "\\" && quote !== "'") {
+            escaping = true;
+            continue;
+        }
+        if ((char === "'" || char === '"') && !quote) {
+            quote = char;
+            continue;
+        }
+        if (char === quote) {
+            quote = "";
+            continue;
+        }
+        if (/\s/.test(char) && !quote) {
+            if (current) {
+                args.push(current);
+                current = "";
+            }
+            continue;
+        }
+        current += char;
+    }
+    if (escaping)
+        current += "\\";
+    if (quote)
+        throw new Error("Unterminated quote in args input");
+    if (current)
+        args.push(current);
+    return args;
+}
+function parsePaths(input) {
+    return input
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#"));
+}
+function hasFlag(args, flag) {
+    return args.some((arg) => arg === flag || arg.startsWith(`${flag}=`));
+}
+function hasAnyFlag(args, flags) {
+    return flags.some((flag) => hasFlag(args, flag));
+}
+function unshiftFlag(args, flag, value) {
+    if (value === undefined) {
+        args.unshift(flag);
+    }
+    else {
+        args.unshift(flag, value);
+    }
+}
+function defaultSince(since) {
+    if (since.trim())
+        return since.trim();
+    const baseRef = process.env.GITHUB_BASE_REF;
+    if (baseRef)
+        return `origin/${baseRef}`;
+    if (process.env.GITHUB_EVENT_NAME === "push") {
+        const eventPath = process.env.GITHUB_EVENT_PATH;
+        if (!eventPath)
+            return "";
+        try {
+            const event = JSON.parse(fs.readFileSync(eventPath, "utf8"));
+            const before = event.before?.trim() ?? "";
+            if (before && !/^0+$/.test(before))
+                return before;
+        }
+        catch {
+            return "";
+        }
+    }
+    return "";
+}
+function buildArgs(options) {
+    const mode = normalizeMode(options.mode);
+    const scope = normalizeScope(options.scope);
+    const paths = parsePaths(options.paths);
+    const legacyArgs = parseArgs(options.args);
+    const hasLegacyArgs = legacyArgs.length > 0 &&
+        !(legacyArgs.length === 1 && legacyArgs[0] === ".");
+    if (mode === "setup")
+        return [];
+    if (mode === "" &&
+        legacyArgs.length === 0 &&
+        paths.length === 0 &&
+        scope === "all") {
+        return [];
+    }
+    if (paths.length > 0 && hasLegacyArgs) {
+        throw new Error("The paths input cannot be combined with custom args.");
+    }
+    if (scope !== "all" && (paths.length > 0 || hasLegacyArgs)) {
+        throw new Error("The scope input cannot be combined with paths or custom args.");
+    }
+    let argArray = paths.length > 0
+        ? paths
+        : scope === "staged"
+            ? ["--staged"]
+            : legacyArgs;
+    if (scope === "changed") {
+        const since = defaultSince(options.since);
+        if (since) {
+            argArray = ["--changed", "--since", since];
+        }
+        else {
+            core.warning("scope: changed could not infer a base ref; checking all configured paths instead.");
+            argArray = legacyArgs.length > 0 ? legacyArgs : ["."];
+        }
+    }
+    const explicitAction = hasAnyFlag(argArray, [
+        "--check",
+        "--in-place",
+        "-i",
+        "--list-changed-files",
+    ]);
+    if (mode === "fix") {
+        if (!explicitAction) {
+            unshiftFlag(argArray, "--in-place");
+        }
+    }
+    else {
+        const wantsCheck = mode === "check" || mode === "diff" || options.checkOnly;
+        if (wantsCheck && !explicitAction) {
+            unshiftFlag(argArray, "--check");
+        }
+    }
+    // Legacy API compatibility: without mode, check-only decides whether the
+    // action injects --check or --in-place. Explicit cmakefmt action flags win.
+    if (mode === "" && !options.checkOnly && !explicitAction) {
+        unshiftFlag(argArray, "--in-place");
+    }
+    const wantsDiff = mode === "diff" || (mode === "" && options.diff);
+    if (wantsDiff &&
+        !hasAnyFlag(argArray, ["--in-place", "-i"]) &&
+        !hasFlag(argArray, "--diff")) {
+        unshiftFlag(argArray, "--diff");
+    }
+    const writesInPlace = hasAnyFlag(argArray, ["--in-place", "-i"]);
+    if (!writesInPlace &&
+        options.reportFormat &&
+        !hasFlag(argArray, "--report-format")) {
+        unshiftFlag(argArray, "--report-format", options.reportFormat);
     }
     return argArray;
+}
+function shellQuote(value) {
+    if (/^[A-Za-z0-9_./:=@+-]+$/.test(value))
+        return value;
+    return `'${value.replace(/'/g, "'\\''")}'`;
+}
+function commandForSummary(args) {
+    return [TOOL_NAME, ...args].map(shellQuote).join(" ");
+}
+function getFlagValue(args, flag) {
+    for (let i = 0; i < args.length; i += 1) {
+        const arg = args[i];
+        if (arg === flag)
+            return args[i + 1] ?? "";
+        if (arg.startsWith(`${flag}=`))
+            return arg.slice(flag.length + 1);
+    }
+    return "";
+}
+function remoteBranchFromSince(since) {
+    const match = /^origin\/(.+)$/.exec(since);
+    return match?.[1] ?? "";
+}
+async function gitExit(args) {
+    return exec.exec("git", args, {
+        ignoreReturnCode: true,
+        silent: true,
+    });
+}
+async function fetchRemoteBranch(since) {
+    const branch = remoteBranchFromSince(since);
+    if (!branch)
+        return;
+    await gitExit([
+        "fetch",
+        "--no-tags",
+        "--prune",
+        "origin",
+        `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ]);
+}
+async function hasMergeBase(since) {
+    return (await gitExit(["merge-base", since, "HEAD"])) === 0;
+}
+async function prepareChangedScope(args) {
+    if (!hasFlag(args, "--changed"))
+        return;
+    const since = getFlagValue(args, "--since");
+    if (!since)
+        return;
+    await fetchRemoteBranch(since);
+    if (await hasMergeBase(since))
+        return;
+    core.info("Fetching additional Git history so scope: changed can find a merge base");
+    const unshallow = await gitExit([
+        "fetch",
+        "--no-tags",
+        "--prune",
+        "--unshallow",
+        "origin",
+    ]);
+    if (unshallow !== 0) {
+        await gitExit(["fetch", "--no-tags", "--prune", "origin"]);
+    }
+    await fetchRemoteBranch(since);
+}
+function removeReportFormat(args) {
+    const filtered = [];
+    for (let i = 0; i < args.length; i += 1) {
+        const arg = args[i];
+        if (arg === "--report-format") {
+            i += 1;
+            continue;
+        }
+        if (arg.startsWith("--report-format=")) {
+            continue;
+        }
+        filtered.push(arg);
+    }
+    return filtered;
+}
+function localFixArgs(args) {
+    const filtered = removeReportFormat(args).filter((arg) => arg !== "--check" &&
+        arg !== "--diff" &&
+        arg !== "--list-changed-files");
+    if (!hasAnyFlag(filtered, ["--in-place", "-i"])) {
+        filtered.unshift("--in-place");
+    }
+    return filtered;
+}
+function localDiffArgs(args) {
+    const filtered = removeReportFormat(args).filter((arg) => arg !== "--check" && arg !== "--in-place" && arg !== "-i");
+    if (!hasFlag(filtered, "--diff")) {
+        filtered.unshift("--diff");
+    }
+    return filtered;
+}
+function parseJsonSummary(stdout) {
+    const trimmed = stdout.trim();
+    if (!trimmed)
+        return undefined;
+    try {
+        const report = JSON.parse(trimmed);
+        return report.summary;
+    }
+    catch {
+        return undefined;
+    }
+}
+async function writeStepSummary(version, args, exitCode, jsonSummary) {
+    const outcome = exitCode === 0 ? "passed" : "failed";
+    const rows = [
+        [
+            { data: "Version", header: true },
+            version,
+        ],
+        [
+            { data: "Command", header: true },
+            `\`${commandForSummary(args)}\``,
+        ],
+        [
+            { data: "Outcome", header: true },
+            outcome,
+        ],
+    ];
+    if (jsonSummary) {
+        rows.push([
+            { data: "Selected files", header: true },
+            String(jsonSummary.selected ?? 0),
+        ], [
+            { data: "Files needing formatting", header: true },
+            String(jsonSummary.changed ?? 0),
+        ], [
+            { data: "Failed files", header: true },
+            String(jsonSummary.failed ?? 0),
+        ]);
+    }
+    core.summary.addHeading("cmakefmt").addTable(rows);
+    if (exitCode !== 0) {
+        core.summary.addRaw("\nRun locally:\n\n");
+        core.summary.addCodeBlock(commandForSummary(localFixArgs(args)), "bash");
+        core.summary.addRaw("\nOr inspect the patch:\n\n");
+        core.summary.addCodeBlock(commandForSummary(localDiffArgs(args)), "bash");
+    }
+    await core.summary.write();
 }
 async function run() {
     const versionInput = core.getInput("version");
@@ -28378,19 +28682,44 @@ async function run() {
     const diff = core.getInput("diff") === "true";
     const reportFormat = core.getInput("report-format");
     const workingDirectory = core.getInput("working-directory");
+    const mode = core.getInput("mode");
+    const scope = core.getInput("scope");
+    const paths = core.getInput("paths");
+    const since = core.getInput("since");
     const token = core.getInput("token", { required: true });
     const version = await resolveVersion(versionInput, token);
     core.setOutput("version", version);
     core.info(`Resolved ${TOOL_NAME} version: ${version}`);
     const installDir = await install(version);
     core.addPath(installDir);
-    if (args) {
-        const argArray = buildArgs(args, checkOnly, diff, reportFormat);
-        const options = {};
-        if (workingDirectory) {
-            options.cwd = workingDirectory;
-        }
-        await exec.exec(TOOL_NAME, argArray, options);
+    const argArray = buildArgs({
+        args,
+        checkOnly,
+        diff,
+        reportFormat,
+        mode,
+        scope,
+        paths,
+        since,
+    });
+    if (argArray.length === 0)
+        return;
+    await prepareChangedScope(argArray);
+    const options = {};
+    let stdout = "";
+    options.ignoreReturnCode = true;
+    options.listeners = {
+        stdout: (data) => {
+            stdout += data.toString();
+        },
+    };
+    if (workingDirectory) {
+        options.cwd = workingDirectory;
+    }
+    const exitCode = await exec.exec(TOOL_NAME, argArray, options);
+    await writeStepSummary(version, argArray, exitCode, parseJsonSummary(stdout));
+    if (exitCode !== 0) {
+        core.setFailed(`${TOOL_NAME} exited with code ${exitCode}`);
     }
 }
 run().catch((error) => {
