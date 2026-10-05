@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Accept checksum manifests containing `./filename` or binary-mode
+  `*filename` entries, fixing installation from current cmakefmt releases
+  without weakening checksum verification.
+
 ### Added
 
 - `mode` input for common workflows: `check`, `diff`, `fix`, and `setup`.
@@ -38,6 +44,9 @@
   Set to `""` to disable.
 
 ### Changed
+
+- Refresh the Actions SDK and workflow dependencies, removing vulnerable
+  transitive dependencies while retaining the CommonJS distribution.
 
 - Default `args` simplified from `--check --report-format github .` to
   `.`; the `--check` and `--report-format github` flags are now handled

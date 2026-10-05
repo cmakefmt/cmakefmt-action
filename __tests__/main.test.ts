@@ -218,25 +218,28 @@ describe("verifyChecksum", () => {
     if (fs.existsSync(archivePath)) fs.unlinkSync(archivePath);
   });
 
-  it("passes when the checksum matches", async () => {
+  it.each(["", "./", "*", "*./"])(
+    "passes when the checksum matches with filename prefix %j",
+    async (prefix) => {
+      const checksumFile = path.join(os.tmpdir(), "SHA256SUMS-test");
+      fs.writeFileSync(
+        checksumFile,
+        `${archiveHash}  ${prefix}${archive}\n` +
+          `deadbeef  ${archive}.sigstore\n`,
+      );
+      (tc.downloadTool as jest.Mock).mockResolvedValue(checksumFile);
+
+      await expect(
+        verifyChecksum(archivePath, baseUrl, archive),
+      ).resolves.toBeUndefined();
+
+      fs.unlinkSync(checksumFile);
+    },
+  );
+
+  it.each(["", "./"])("throws on checksum mismatch with prefix %j", async (prefix) => {
     const checksumFile = path.join(os.tmpdir(), "SHA256SUMS-test");
-    fs.writeFileSync(
-      checksumFile,
-      `${archiveHash}  ${archive}\n` +
-        `deadbeef  ${archive}.sigstore\n`,
-    );
-    (tc.downloadTool as jest.Mock).mockResolvedValue(checksumFile);
-
-    await expect(
-      verifyChecksum(archivePath, baseUrl, archive),
-    ).resolves.toBeUndefined();
-
-    fs.unlinkSync(checksumFile);
-  });
-
-  it("throws on checksum mismatch", async () => {
-    const checksumFile = path.join(os.tmpdir(), "SHA256SUMS-test");
-    fs.writeFileSync(checksumFile, `badhash  ${archive}\n`);
+    fs.writeFileSync(checksumFile, `badhash  ${prefix}${archive}\n`);
     (tc.downloadTool as jest.Mock).mockResolvedValue(checksumFile);
 
     await expect(
@@ -258,9 +261,14 @@ describe("verifyChecksum", () => {
     fs.unlinkSync(checksumFile);
   });
 
-  it("matches exact filename, not substring", async () => {
+  it.each(["", "./", "nested/", "../"])("matches exact filename with prefix %j", async (prefix) => {
     const checksumFile = path.join(os.tmpdir(), "SHA256SUMS-test");
-    fs.writeFileSync(checksumFile, `${archiveHash}  ${archive}.sigstore\n`);
+    fs.writeFileSync(
+      checksumFile,
+      `${archiveHash}  ${prefix}${archive}.sigstore\n` +
+        `${archiveHash}  ${prefix}other-${archive}\n` +
+        `${archiveHash}  nested/${archive}\n`,
+    );
     (tc.downloadTool as jest.Mock).mockResolvedValue(checksumFile);
 
     await expect(

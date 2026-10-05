@@ -29,7 +29,7 @@ jobs:
       contents: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
 
@@ -73,9 +73,9 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
-          node-version: 20
+          node-version: '24'
 
       - run: npm ci
 
@@ -149,7 +149,7 @@ jobs:
           git push origin "refs/tags/${TAG}"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           generate_release_notes: true

@@ -132,7 +132,9 @@ export async function verifyChecksum(
   let expected = "";
   for (const line of content.split(/\r?\n/)) {
     const parts = line.trim().split(/\s+/);
-    if (parts.length >= 2 && parts[1] === archiveName) {
+    // Release manifests may use ./filename; sha256sum's binary mode adds *.
+    const filename = parts[1]?.replace(/^\*/, "").replace(/^\.\//, "");
+    if (parts.length >= 2 && filename === archiveName) {
       expected = parts[0];
       break;
     }
