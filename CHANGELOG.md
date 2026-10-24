@@ -4,11 +4,17 @@
 
 ### Fixed
 
+- Update the bundled HTTP client and test dependencies to resolve Undici
+  and Handlebars security advisories.
+
 - Accept checksum manifests containing `./filename` or binary-mode
   `*filename` entries, fixing installation from current cmakefmt releases
   without weakening checksum verification.
 
 ### Added
+
+- Check npm security advisories in CI and monitor npm dependencies with
+  Dependabot, alongside pinned GitHub Actions updates.
 
 - `mode` input for common workflows: `check`, `diff`, `fix`, and `setup`.
   This gives users a simpler first-choice API while preserving the advanced
